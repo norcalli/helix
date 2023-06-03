@@ -648,7 +648,7 @@ async fn delete_before_word_selection() -> anyhow::Result<()> {
         test((
             format!("{}#[|foo]#{}", pair.0, LINE_END),
             "i<backspace>",
-            format!("#[foo|]#{}", LINE_END),
+            format!("#[|foo]#{}", LINE_END),
         ))
         .await?;
 
@@ -656,7 +656,7 @@ async fn delete_before_word_selection() -> anyhow::Result<()> {
         test((
             format!("{}{}#[|foo]#{}", pair.0, pair.1, LINE_END),
             "i<backspace>",
-            format!("{}#[foo|]#{}", pair.0, LINE_END),
+            format!("{}#[|foo]#{}", pair.0, LINE_END),
         ))
         .await?;
 
@@ -664,7 +664,7 @@ async fn delete_before_word_selection() -> anyhow::Result<()> {
         test((
             format!("{}#[|{}foo]#{}", pair.0, pair.1, LINE_END),
             "i<backspace>",
-            format!("#[foo|]#{}", LINE_END),
+            format!("#[|foo]#{}", LINE_END),
         ))
         .await?;
     }
@@ -678,7 +678,7 @@ async fn delete_before_word_selection_trailing_word() -> anyhow::Result<()> {
         test((
             format!("foo{}#[|{} wor]#{}", pair.0, pair.1, LINE_END),
             "i<backspace>",
-            format!("foo#[ wor|]#{}", LINE_END),
+            format!("foo#[| wor]#{}", LINE_END),
         ))
         .await?;
     }
@@ -783,7 +783,7 @@ async fn delete_before_multi_code_point_graphemes() -> anyhow::Result<()> {
                 pair.0, pair.1, LINE_END
             ),
             "i<backspace>",
-            format!("hello #[👨‍👩‍👧‍👦|]# goodbye{}", LINE_END),
+            format!("hello #[|👨‍👩‍👧‍👦]# goodbye{}", LINE_END),
         ))
         .await?;
     }
@@ -960,7 +960,7 @@ async fn delete_mixed_dedent() -> anyhow::Result<()> {
             )),
             "i<backspace>",
             helpers::platform_line(indoc! {"\
-                bar = #[woop|]#
+                bar = #[|woop]#
                 #(|word)#
                 f#(|o)#
             "}),
@@ -972,16 +972,16 @@ async fn delete_mixed_dedent() -> anyhow::Result<()> {
             helpers::platform_line(&format!(
                 indoc! {"\
                     bar = #[|woop{}]#{}
-                    #(|   )# word
+                    #(|    )#word
                     #(|fo)#o
                 "},
                 pair.0, pair.1,
             )),
             "a<backspace>",
             helpers::platform_line(indoc! {"\
-                bar = #[woop|]#
-                #(|w)#ord
-                #(|fo)#
+                bar = #[woop\n|]#
+                #(w|)#ord
+                #(fo|)#
             "}),
         ))
         .await?;
