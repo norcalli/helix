@@ -16,9 +16,119 @@ fn matching_pairs() -> impl Iterator<Item = &'static (char, char)> {
 async fn insert_basic() -> anyhow::Result<()> {
     for pair in DEFAULT_PAIRS {
         test((
-            format!("#[{}|]#", LINE_END),
+            helpers::platform_line("#[\n|]#"),
             format!("i{}", pair.0),
-            format!("{}#[|{}]#{}", pair.0, pair.1, LINE_END),
+            helpers::platform_line(&format!("{}#[|{}]#", pair.0, pair.1)),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn insert_whitespace() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        test((
+            helpers::platform_line(&format!("{}#[|{}]#", pair.0, pair.1)),
+            "i ",
+            helpers::platform_line(&format!("{} #[| ]#{}", pair.0, pair.1)),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn insert_whitespace_multi() -> anyhow::Result<()> {
+    for pair in differing_pairs() {
+        test((
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    {open}#[|{close}]#
+                    {open}#(|{open})#{close}{close}
+                    {open}{open}#(|{close}{close})#
+                    foo#(|\n)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+            "i ",
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    {open} #[| ]#{close}
+                    {open} #(|{open})#{close}{close}
+                    {open}{open} #(| {close}{close})#
+                    foo #(|\n)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn append_whitespace_multi() -> anyhow::Result<()> {
+    for pair in differing_pairs() {
+        test((
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    #[|{open}]#{close}
+                    #(|{open})#{open}{close}{close}
+                    #(|{open}{open})#{close}{close}
+                    #(|foo)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+            "a ",
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    #[{open}  |]#{close}
+                    #({open} {open}|)#{close}{close}
+                    #({open}{open}  |)#{close}{close}
+                    #(foo \n|)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn insert_whitespace_no_pair() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        // sanity check - do not insert extra whitespace unless immediately
+        // surrounded by a pair
+        test((
+            helpers::platform_line(&format!("{} #[|{}]#", pair.0, pair.1)),
+            "i ",
+            helpers::platform_line(&format!("{}  #[|{}]#", pair.0, pair.1)),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn insert_whitespace_no_matching_pair() -> anyhow::Result<()> {
+    for pair in differing_pairs() {
+        // sanity check - verify whitespace does not insert unless both pairs
+        // are matches, i.e. no two different openers
+        test((
+            helpers::platform_line(&format!("{}#[|{}]#", pair.0, pair.0)),
+            "i ",
+            helpers::platform_line(&format!("{} #[|{}]#", pair.0, pair.0)),
         ))
         .await?;
     }
@@ -561,6 +671,112 @@ async fn delete_multi() -> anyhow::Result<()> {
             format!("{}#[|{}]#{}", pair.0, pair.1, LINE_END),
             "i<backspace>",
             format!("#[{}|]#", LINE_END),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_whitespace() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        test((
+            helpers::platform_line(&format!("{} #[| ]#{}", pair.0, pair.1)),
+            "i<backspace>",
+            helpers::platform_line(&format!("{}#[{}|]#", pair.0, pair.1)),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_whitespace_multi() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        test((
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    {open} #[| ]#{close}
+                    {open} #(|{open})#{close}{close}
+                    {open}{open} #(| {close}{close})#
+                    foo #(|\n)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+            "i<backspace>",
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    {open}#[{close}|]#
+                    {open}#(|{open})#{close}{close}
+                    {open}{open}#(|{close}{close})#
+                    foo#(|\n)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_append_whitespace_multi() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        test((
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    #[{open} |]# {close}
+                    #({open} |)#{open}{close}{close}
+                    #({open}{open} |)# {close}{close}
+                    #(foo |)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+            "a<backspace>",
+            helpers::platform_line(&format!(
+                indoc! {"\
+                    #[{open}{close}|]#
+                    #({open}{open}|)#{close}{close}
+                    #({open}{open}{close}|)#{close}
+                    #(foo\n|)#
+                "},
+                open = pair.0,
+                close = pair.1,
+            )),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_whitespace_no_pair() -> anyhow::Result<()> {
+    for pair in DEFAULT_PAIRS {
+        test((
+            helpers::platform_line(&format!("{}  #[|{}]#", pair.0, pair.1)),
+            "i<backspace>",
+            helpers::platform_line(&format!("{} #[|{}]#", pair.0, pair.1)),
+        ))
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_whitespace_no_matching_pair() -> anyhow::Result<()> {
+    for pair in differing_pairs() {
+        test((
+            helpers::platform_line(&format!("{} #[|{}]#", pair.0, pair.0)),
+            "i<backspace>",
+            helpers::platform_line(&format!("{}#[|{}]#", pair.0, pair.0)),
         ))
         .await?;
     }
