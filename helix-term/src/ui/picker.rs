@@ -166,6 +166,7 @@ impl<I, D> Clone for Injector<I, D> {
     }
 }
 
+#[derive(Debug)]
 pub struct InjectorShutdown;
 
 impl<T, D> Injector<T, D> {
@@ -178,6 +179,14 @@ impl<T, D> Injector<T, D> {
         Ok(())
     }
 }
+
+impl std::fmt::Display for InjectorShutdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "picker has been shut down")
+    }
+}
+
+impl std::error::Error for InjectorShutdown {}
 
 type ColumnFormatFn<T, D> = for<'a> fn(&'a T, &'a D) -> Cell<'a>;
 
