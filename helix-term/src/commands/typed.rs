@@ -2798,19 +2798,47 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         signature: CommandSignature::positional(&[completers::filename]),
     },
     TypableCommand {
-        name: "prime-prompt",
+        name: "push-prompt-input",
         aliases: &[],
-        doc: "Prime the prompt with the args",
-        fun: prime_prompt,
+        doc: "Push input for the next prompt with the args",
+        fun: push_prompt_input,
+        signature: CommandSignature::none(),
+    },
+    TypableCommand {
+        name: "set-next-register",
+        aliases: &[],
+        doc: "Set the register for the next command",
+        fun: set_next_register,
         signature: CommandSignature::none(),
     },
 ];
 
-fn prime_prompt(cx: &mut Context, args: &[Cow<str>], event: PromptEvent) -> anyhow::Result<()> {
+fn push_prompt_input(
+    cx: &mut Context,
+    args: &[Cow<str>],
+    event: PromptEvent,
+) -> anyhow::Result<()> {
     if event != PromptEvent::Validate {
         return Ok(());
     }
     cx.prompt_buf.push_back(args.join(" "));
+    Ok(())
+}
+
+fn set_next_register(
+    cx: &mut Context,
+    args: &[Cow<str>],
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+    ensure!(args.len() == 1, ":set-next-register takes 1 argument");
+    let reg = args[0]
+        .chars()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!(":set-next-register Empty argument"))?;
+    cx.register = Some(reg);
     Ok(())
 }
 
