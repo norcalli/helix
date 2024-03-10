@@ -13,7 +13,7 @@ mod spinner;
 mod statusline;
 mod text;
 
-use crate::compositor::{Component, Compositor};
+use crate::compositor::{self, Component, Compositor};
 use crate::filter_picker_entry;
 use crate::job::{self, Callback};
 pub use completion::{Completion, CompletionItem};
@@ -38,6 +38,16 @@ pub fn prompt(
     completion_fn: impl FnMut(&Editor, &str) -> Vec<prompt::Completion> + 'static,
     callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent) + 'static,
 ) {
+    if let Some(line) = cx.prompt_buf.pop_front() {
+        let mut callback_fn = callback_fn;
+        let mut cx = compositor::Context {
+            editor: cx.editor,
+            scroll: None,
+            jobs: cx.jobs,
+        };
+        (callback_fn)(&mut cx, &line, PromptEvent::Validate);
+        return;
+    }
     let mut prompt = Prompt::new(prompt, history_register, completion_fn, callback_fn);
     // Calculate the initial completion
     prompt.recalculate_completion(cx.editor);

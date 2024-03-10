@@ -57,7 +57,7 @@ use crate::{
 
 use crate::job::{self, Jobs};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
     future::Future,
     io::Read,
@@ -83,6 +83,7 @@ pub struct Context<'a> {
     pub register: Option<char>,
     pub count: Option<NonZeroUsize>,
     pub editor: &'a mut Editor,
+    pub prompt_buf: VecDeque<String>,
 
     pub callback: Vec<crate::compositor::Callback>,
     pub on_next_key_callback: Option<OnKeyCallback>,
@@ -193,6 +194,10 @@ macro_rules! static_commands {
 impl MappableCommand {
     pub fn execute(&self, cx: &mut Context) {
         match &self {
+            Self::Typable { name, args, doc: _ } if name == "prime-prompt" => {
+                // cx.prompt_buf.extend(args.iter().cloned());
+                cx.prompt_buf.push_back(args.join(" "));
+            }
             Self::Typable { name, args, doc: _ } => {
                 let args: Vec<Cow<str>> = args.iter().map(Cow::from).collect();
                 if let Some(command) = typed::TYPABLE_COMMAND_MAP.get(name.as_str()) {
@@ -2984,6 +2989,7 @@ pub fn command_palette(cx: &mut Context) {
             let picker = Picker::new(commands, keymap, move |cx, command, _action| {
                 let mut ctx = Context {
                     register,
+                    prompt_buf: Default::default(),
                     count,
                     editor: cx.editor,
                     callback: Vec::new(),

@@ -1869,6 +1869,9 @@ impl Editor {
     /// or `None` if the primary cursor is not visible on screen.
     pub fn cursor(&self) -> (Option<Position>, CursorKind) {
         let config = self.config();
+        if self.tree.try_get(self.tree.focus).is_none() {
+            return (None, CursorKind::default());
+        }
         let (view, doc) = current_ref!(self);
         let cursor = doc
             .selection(view.id)

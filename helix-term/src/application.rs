@@ -1,5 +1,5 @@
 use arc_swap::{access::Map, ArcSwap};
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use helix_core::{diagnostic::Severity, pos_at_coords, syntax, Selection};
 use helix_lsp::{
     lsp::{self, notification::Notification},
@@ -18,9 +18,11 @@ use helix_view::{
 };
 use serde_json::json;
 use tui::backend::Backend;
+use vmap::io::{SeqRead, SeqWrite};
 
 use crate::{
     args::Args,
+    commands::MappableCommand,
     compositor::{Compositor, Event},
     config::Config,
     handlers,
@@ -68,6 +70,8 @@ pub struct Application {
     #[allow(dead_code)]
     syn_loader: Arc<ArcSwap<syntax::Loader>>,
 
+    #[cfg(not(windows))]
+    command_stream: tokio::sync::mpsc::UnboundedReceiver<Vec<MappableCommand>>,
     signals: Signals,
     jobs: Jobs,
     lsp_progress: LspProgressMap,
@@ -233,6 +237,15 @@ impl Application {
         ])
         .context("build signal handler")?;
 
+        #[cfg(not(windows))]
+        let command_stream = {
+            let pid = std::process::id();
+            let file_path = std::env::temp_dir().join(format!("helix.{pid}.sock"));
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            if let Ok(()) = spawn_command_listener(file_path, tx) {}
+            rx
+        };
+
         let app = Self {
             compositor,
             terminal,
@@ -243,6 +256,7 @@ impl Application {
             theme_loader,
             syn_loader,
 
+            command_stream,
             signals,
             jobs: Jobs::new(),
             lsp_progress: LspProgressMap::new(),
@@ -306,8 +320,6 @@ impl Application {
                 return false;
             }
 
-            use futures_util::StreamExt;
-
             tokio::select! {
                 biased;
 
@@ -336,6 +348,25 @@ impl Application {
                 }
                 Some(callback) = self.jobs.wait_futures.next() => {
                     self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);
+                    self.render().await;
+                }
+                Some(commands) = self.command_stream.recv() => {
+                    let mut ctx = crate::commands::Context {
+                        register: None,
+                        prompt_buf: Default::default(),
+                        count: None,
+                        editor: &mut self.editor,
+                        callback: Vec::new(),
+                        on_next_key_callback: None,
+                        jobs: &mut self.jobs,
+                    };
+                    let mode = ctx.editor.mode();
+                    log::info!("Commands: {commands:?}");
+                    let editor_view = self
+                        .compositor
+                        .find::<ui::EditorView>()
+                        .expect("expected at least one EditorView");
+                    editor_view.execute_commands(mode, &mut ctx, commands.as_slice());
                     self.render().await;
                 }
                 event = self.editor.wait_event() => {
@@ -1237,6 +1268,98 @@ impl Application {
             ));
         }
 
+        if let Err(err) = tokio::fs::remove_file({
+            let pid = std::process::id();
+            let file_path = std::env::temp_dir().join(format!("helix.{pid}.sock"));
+            file_path
+        })
+        .await
+        {
+            errs.push(anyhow::format_err!(
+                "Failed to clean up command stream file: {err:?}"
+            ));
+        }
+
         errs
     }
+}
+
+fn spawn_command_listener(
+    file_path: std::path::PathBuf,
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<MappableCommand>>,
+) -> Result<(), Error> {
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let listener = tokio::net::UnixListener::bind(&file_path).unwrap();
+            log::info!("Started listener on {}", file_path.display());
+            loop {
+                log::info!("Loop");
+                match listener.accept().await {
+                    Ok((stream, addr)) => {
+                        log::info!("New client {addr:?}");
+                        let tx = tx.clone();
+
+                        use std::io::BufRead;
+                        use tokio::io::Interest;
+                        let mut buf = vmap::io::Ring::new(1 << 20).unwrap();
+                        let mut line_buf = String::new();
+                        // let mut buf = Vec::with_capacity(4096);
+                        loop {
+                            let ready = stream
+                                .ready(Interest::READABLE | Interest::WRITABLE)
+                                .await?;
+                            if ready.is_readable() {
+                                match stream.try_read_buf(&mut buf.as_write_slice(usize::MAX)) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        buf.feed(n);
+                                        log::debug!("Read {n} bytes");
+                                        line_buf.clear();
+                                        if buf
+                                            .as_read_slice(usize::MAX)
+                                            .read_line(&mut line_buf)
+                                            .ok()
+                                            >= Some(0)
+                                        {
+                                            log::info!("Line: {line_buf:?}");
+                                            buf.consume(line_buf.len());
+                                            match serde_json::from_str(&line_buf) {
+                                                Ok(data) => {
+                                                    let data: Vec<MappableCommand> = data;
+                                                    if tx.send(data).is_err() {
+                                                        break;
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    log::error!(
+                                                        "Failed to parse command: \
+                                                         {line_buf:?}. Err: {err:?}"
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        return Err(e.into());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Failed to open connection: {err:?}");
+                    }
+                }
+            }
+            #[allow(unreachable_code)]
+            anyhow::Ok(())
+        })
+        .unwrap();
+    });
+
+    Ok(())
 }

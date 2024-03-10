@@ -887,6 +887,44 @@ impl EditorView {
         None
     }
 
+    pub fn execute_commands(
+        &mut self,
+        mode: Mode,
+        ctx: &mut commands::Context,
+        commands: &[commands::MappableCommand],
+    ) {
+        let mut last_mode = mode;
+
+        let mut execute_command = |command: &commands::MappableCommand| {
+            command.execute(ctx);
+            helix_event::dispatch(PostCommand { command, cx: ctx });
+
+            let current_mode = ctx.editor.mode();
+            if current_mode != last_mode {
+                helix_event::dispatch(OnModeSwitch {
+                    old_mode: last_mode,
+                    new_mode: current_mode,
+                    cx: ctx,
+                });
+
+                // HAXX: if we just entered insert mode from normal, clear key buf
+                // and record the command that got us into this mode.
+                if current_mode == Mode::Insert {
+                    // how we entered insert mode is important, and we should track that so
+                    // we can repeat the side effect.
+                    self.last_insert.0 = command.clone();
+                    self.last_insert.1.clear();
+                }
+            }
+
+            last_mode = current_mode;
+        };
+
+        for command in commands {
+            execute_command(command);
+        }
+    }
+
     fn insert_mode(&mut self, cx: &mut commands::Context, event: KeyEvent) {
         if let Some(keyresult) = self.handle_keymap_event(Mode::Insert, cx, event) {
             match keyresult {
@@ -1269,6 +1307,7 @@ impl Component for EditorView {
         let mut cx = commands::Context {
             editor: context.editor,
             count: None,
+            prompt_buf: Default::default(),
             register: None,
             callback: Vec::new(),
             on_next_key_callback: None,

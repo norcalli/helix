@@ -3021,7 +3021,25 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         fun: move_buffer,
         signature: CommandSignature::positional(&[completers::filename]),
     },
+    TypableCommand {
+        name: "prime-prompt",
+        aliases: &[],
+        doc: "Prime the prompt with the args",
+        fun: prime_prompt,
+        signature: CommandSignature::none(),
+    },
 ];
+
+fn prime_prompt(
+    _cx: &mut compositor::Context,
+    _args: &[Cow<str>],
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+    Ok(())
+}
 
 pub static TYPABLE_COMMAND_MAP: Lazy<HashMap<&'static str, &'static TypableCommand>> =
     Lazy::new(|| {
