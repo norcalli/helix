@@ -1,6 +1,6 @@
 use super::{Context, Editor};
 use crate::{
-    compositor::{self, Compositor},
+    compositor::Compositor,
     job::{Callback, Jobs},
     ui::{self, overlay::overlaid, Picker, Popup, Prompt, PromptEvent, Text},
 };
@@ -128,12 +128,13 @@ fn dap_callback<T, F>(
 }
 
 pub fn dap_start_impl(
-    cx: &mut compositor::Context,
+    editor: &mut Editor,
+    jobs: &mut Jobs,
     name: Option<&str>,
     socket: Option<std::net::SocketAddr>,
     params: Option<Vec<std::borrow::Cow<str>>>,
 ) -> Result<(), anyhow::Error> {
-    let doc = doc!(cx.editor);
+    let doc = doc!(editor);
 
     let config = doc
         .language_config()
@@ -230,19 +231,19 @@ pub fn dap_start_impl(
     match &template.request[..] {
         "launch" => {
             let call = debugger.launch(args);
-            dap_callback(cx.jobs, call, callback);
+            dap_callback(jobs, call, callback);
         }
         "attach" => {
             let call = debugger.attach(args);
-            dap_callback(cx.jobs, call, callback);
+            dap_callback(jobs, call, callback);
         }
         request => bail!("Unsupported request '{}'", request),
     };
 
     // TODO: either await "initialized" or buffer commands until event is received
-    cx.editor.debugger = Some(debugger);
+    editor.debugger = Some(debugger);
     let stream = UnboundedReceiverStream::new(events);
-    cx.editor.debugger_events.push(stream);
+    editor.debugger_events.push(stream);
     Ok(())
 }
 
@@ -377,7 +378,8 @@ fn debug_parameter_prompt(
                 });
                 cx.jobs.callback(callback);
             } else if let Err(err) = dap_start_impl(
-                cx,
+                cx.editor,
+                cx.jobs,
                 Some(&config_name),
                 None,
                 Some(params.iter().map(|x| x.into()).collect()),

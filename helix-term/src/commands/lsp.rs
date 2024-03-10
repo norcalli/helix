@@ -28,9 +28,12 @@ use helix_view::{
 };
 
 use crate::{
-    compositor::{self, Compositor},
+    compositor::Compositor,
     job::Callback,
-    ui::{self, overlay::overlaid, DynamicPicker, FileLocation, Picker, Popup, PromptEvent},
+    ui::{
+        self, overlay::overlaid, DynamicPicker, FileLocation, Picker, Popup, PromptContext,
+        PromptEvent,
+    },
 };
 
 use std::{
@@ -1040,7 +1043,7 @@ pub fn rename_symbol(cx: &mut Context) {
             "rename-to:".into(),
             None,
             ui::completers::none,
-            move |cx: &mut compositor::Context, input: &str, event: PromptEvent| {
+            move |cx: &mut PromptContext, input: &str, event: PromptEvent| {
                 if event != PromptEvent::Validate {
                     return;
                 }

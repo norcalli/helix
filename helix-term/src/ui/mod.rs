@@ -13,7 +13,7 @@ mod spinner;
 mod statusline;
 mod text;
 
-use crate::compositor::{self, Component, Compositor};
+use crate::compositor::{Component, Compositor};
 use crate::filter_picker_entry;
 use crate::job::{self, Callback};
 pub use completion::{Completion, CompletionItem};
@@ -23,7 +23,7 @@ pub use markdown::Markdown;
 pub use menu::Menu;
 pub use picker::{DynamicPicker, FileLocation, Picker};
 pub use popup::Popup;
-pub use prompt::{Prompt, PromptEvent};
+pub use prompt::{Prompt, PromptContext, PromptEvent};
 pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
 
@@ -36,16 +36,11 @@ pub fn prompt(
     prompt: std::borrow::Cow<'static, str>,
     history_register: Option<char>,
     completion_fn: impl FnMut(&Editor, &str) -> Vec<prompt::Completion> + 'static,
-    callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent) + 'static,
+    callback_fn: impl FnMut(&mut crate::commands::Context, &str, PromptEvent) + 'static,
 ) {
     if let Some(line) = cx.prompt_buf.pop_front() {
         let mut callback_fn = callback_fn;
-        let mut cx = compositor::Context {
-            editor: cx.editor,
-            scroll: None,
-            jobs: cx.jobs,
-        };
-        (callback_fn)(&mut cx, &line, PromptEvent::Validate);
+        (callback_fn)(cx, &line, PromptEvent::Validate);
         return;
     }
     let mut prompt = Prompt::new(prompt, history_register, completion_fn, callback_fn);
@@ -60,7 +55,7 @@ pub fn prompt_with_input(
     input: String,
     history_register: Option<char>,
     completion_fn: impl FnMut(&Editor, &str) -> Vec<prompt::Completion> + 'static,
-    callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent) + 'static,
+    callback_fn: impl FnMut(&mut crate::commands::Context, &str, PromptEvent) + 'static,
 ) {
     let prompt = Prompt::new(prompt, history_register, completion_fn, callback_fn)
         .with_line(input, cx.editor);
@@ -72,7 +67,7 @@ pub fn regex_prompt(
     prompt: std::borrow::Cow<'static, str>,
     history_register: Option<char>,
     completion_fn: impl FnMut(&Editor, &str) -> Vec<prompt::Completion> + 'static,
-    fun: impl Fn(&mut crate::compositor::Context, rope::Regex, PromptEvent) + 'static,
+    fun: impl Fn(&mut crate::commands::Context, rope::Regex, PromptEvent) + 'static,
 ) {
     raw_regex_prompt(
         cx,
@@ -87,7 +82,7 @@ pub fn raw_regex_prompt(
     prompt: std::borrow::Cow<'static, str>,
     history_register: Option<char>,
     completion_fn: impl FnMut(&Editor, &str) -> Vec<prompt::Completion> + 'static,
-    fun: impl Fn(&mut crate::compositor::Context, rope::Regex, &str, PromptEvent) + 'static,
+    fun: impl Fn(&mut crate::commands::Context, rope::Regex, &str, PromptEvent) + 'static,
 ) {
     let (view, doc) = current!(cx.editor);
     let doc_id = view.doc;
@@ -99,7 +94,7 @@ pub fn raw_regex_prompt(
         prompt,
         history_register,
         completion_fn,
-        move |cx: &mut crate::compositor::Context, input: &str, event: PromptEvent| {
+        move |cx: &mut crate::commands::Context, input: &str, event: PromptEvent| {
             match event {
                 PromptEvent::Abort => {
                     let (view, doc) = current!(cx.editor);

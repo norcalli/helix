@@ -262,7 +262,7 @@ impl<T: Item + 'static> Picker<T> {
             "".into(),
             None,
             ui::completers::none,
-            |_editor: &mut Context, _pattern: &str, _event: PromptEvent| {},
+            |_editor: &mut crate::commands::Context, _pattern: &str, _event: PromptEvent| {},
         );
 
         Self {

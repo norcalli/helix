@@ -1446,7 +1446,8 @@ impl Component for EditorView {
             }
             Event::FocusLost => {
                 if context.editor.config().auto_save {
-                    if let Err(e) = commands::typed::write_all_impl(context, false, false) {
+                    let mut context = commands::Context::new(context.editor, context.jobs);
+                    if let Err(e) = commands::typed::write_all_impl(&mut context, false, false) {
                         context.editor.set_error(format!("{}", e));
                     }
                 }

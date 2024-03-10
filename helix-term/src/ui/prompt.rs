@@ -17,10 +17,11 @@ use helix_view::{
     Editor,
 };
 
-type PromptCharHandler = Box<dyn Fn(&mut Prompt, char, &Context)>;
+pub type PromptContext<'a> = crate::commands::Context<'a>;
+type PromptCharHandler = Box<dyn Fn(&mut Prompt, char, &crate::commands::Context)>;
 pub type Completion = (RangeFrom<usize>, Cow<'static, str>);
 type CompletionFn = Box<dyn FnMut(&Editor, &str) -> Vec<Completion>>;
-type CallbackFn = Box<dyn FnMut(&mut Context, &str, PromptEvent)>;
+type CallbackFn = Box<dyn FnMut(&mut PromptContext, &str, PromptEvent)>;
 pub type DocFn = Box<dyn Fn(&str) -> Option<Cow<str>>>;
 
 pub struct Prompt {
@@ -73,7 +74,7 @@ impl Prompt {
         prompt: Cow<'static, str>,
         history_register: Option<char>,
         completion_fn: impl FnMut(&Editor, &str) -> Vec<Completion> + 'static,
-        callback_fn: impl FnMut(&mut Context, &str, PromptEvent) + 'static,
+        callback_fn: impl FnMut(&mut PromptContext, &str, PromptEvent) + 'static,
     ) -> Self {
         Self {
             prompt,
@@ -218,7 +219,7 @@ impl Prompt {
         }
     }
 
-    pub fn insert_char(&mut self, c: char, cx: &Context) {
+    pub fn insert_char(&mut self, c: char, cx: &crate::commands::Context) {
         if let Some(handler) = &self.next_char_handler.take() {
             handler(self, c, cx);
 
@@ -306,7 +307,7 @@ impl Prompt {
 
     pub fn change_history(
         &mut self,
-        cx: &mut Context,
+        cx: &mut crate::commands::Context,
         register: char,
         direction: CompletionDirection,
     ) {
@@ -515,6 +516,8 @@ impl Component for Prompt {
             // remove the layer
             compositor.pop();
         })));
+        let mut cx = crate::commands::Context::new(cx.editor, cx.jobs);
+        let cx = &mut cx;
 
         match event {
             ctrl!('c') | key!(Esc) => {

@@ -91,6 +91,27 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    /// Waits on all pending jobs, and then tries to flush all pending write
+    /// operations for all documents.
+    pub fn block_try_flush_writes(&mut self) -> anyhow::Result<()> {
+        tokio::task::block_in_place(|| helix_lsp::block_on(self.jobs.finish(self.editor, None)))?;
+        tokio::task::block_in_place(|| helix_lsp::block_on(self.editor.flush_writes()))?;
+        Ok(())
+    }
+}
+
+impl<'a> Context<'a> {
+    pub fn new(editor: &'a mut Editor, jobs: &'a mut Jobs) -> Self {
+        Self {
+            editor,
+            jobs,
+            register: None,
+            count: None,
+            prompt_buf: Default::default(),
+            callback: vec![],
+            on_next_key_callback: None,
+        }
+    }
     /// Push a new component onto the compositor.
     pub fn push_layer(&mut self, component: Box<dyn Component>) {
         self.callback
@@ -194,19 +215,10 @@ macro_rules! static_commands {
 impl MappableCommand {
     pub fn execute(&self, cx: &mut Context) {
         match &self {
-            Self::Typable { name, args, doc: _ } if name == "prime-prompt" => {
-                // cx.prompt_buf.extend(args.iter().cloned());
-                cx.prompt_buf.push_back(args.join(" "));
-            }
             Self::Typable { name, args, doc: _ } => {
                 let args: Vec<Cow<str>> = args.iter().map(Cow::from).collect();
                 if let Some(command) = typed::TYPABLE_COMMAND_MAP.get(name.as_str()) {
-                    let mut cx = compositor::Context {
-                        editor: cx.editor,
-                        jobs: cx.jobs,
-                        scroll: None,
-                    };
-                    if let Err(e) = (command.fun)(&mut cx, &args[..], PromptEvent::Validate) {
+                    if let Err(e) = (command.fun)(cx, &args[..], PromptEvent::Validate) {
                         cx.editor.set_error(format!("{}", e));
                     }
                 }
@@ -5489,7 +5501,7 @@ async fn shell_impl_async(
     Ok((tendril, output.status.success()))
 }
 
-fn shell(cx: &mut compositor::Context, cmd: &str, behavior: &ShellBehavior) {
+fn shell(cx: &mut Context, cmd: &str, behavior: &ShellBehavior) {
     let pipe = match behavior {
         ShellBehavior::Replace | ShellBehavior::Ignore => true,
         ShellBehavior::Insert | ShellBehavior::Append => false,
